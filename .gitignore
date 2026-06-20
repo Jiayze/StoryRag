@@ -1,6 +1,7 @@
 .env
 .venv/
 .idea/
+.claude/
 __pycache__/
 *.pyc
 *.pyo

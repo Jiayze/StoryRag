@@ -70,37 +70,34 @@ def answer_with_decomposition(
     logger.info(f"Decomposition QA started for question: {question[:120]}")
     scope_corpora = _scope_corpus_names(search_scope) or (corpus_names or [])
     alias_hints = relevant_alias_entries(question, scope_corpora)
+    if not should_use_decomposition(question):
+        logger.info("Decomposition marker not detected; skipping planner and using single retrieval.")
+        return _answer_single_query(
+            client=client,
+            vector_db=vector_db,
+            question=question,
+            corpus_names=corpus_names,
+            search_scope=search_scope,
+            question_history=question_history,
+            selected_contexts=selected_contexts,
+            active_model=active_model,
+            alias_hints=alias_hints,
+        )
+
     plan = build_decomposition_plan(client=client, question=question, model=active_model, alias_hints=alias_hints)
     if not plan.should_decompose or len(plan.sub_questions) <= 1:
         logger.info("Decomposition planner declined multi-query; falling back to single retrieval.")
-        retrieval_result = retrieve_context(
-            vector_db,
-            question,
+        return _answer_single_query(
+            client=client,
+            vector_db=vector_db,
+            question=question,
             corpus_names=corpus_names,
             search_scope=search_scope,
-            model=active_model,
-        )
-        selected_context_text = format_selected_contexts(selected_contexts)
-        api_messages = build_answer_messages(
-            context_text=retrieval_result.context_text,
-            selected_context_text=selected_context_text,
-            question=question,
-            core_question=retrieval_result.query_plan.core_question,
-            retrieval_focus=retrieval_result.query_plan.retrieval_focus,
-            premise_claims=retrieval_result.query_plan.premise_claims,
             question_history=question_history,
+            selected_contexts=selected_contexts,
+            active_model=active_model,
             alias_hints=alias_hints,
         )
-        allow_open_ended = "open_ended" in set(retrieval_result.query_plan.query_modes)
-        validated_res = get_validated_response(
-            client,
-            api_messages,
-            allow_open_ended=allow_open_ended,
-            model=active_model,
-        )
-        if retrieval_result.chunks and validated_res.is_blocked:
-            validated_res.is_related = True
-        return retrieval_result, validated_res
 
     logger.info(f"Decomposition produced {len(plan.sub_questions)} sub-questions.")
     evidence_sections: list[str] = []
@@ -147,6 +144,51 @@ def answer_with_decomposition(
         validated_res.is_related = True
     logger.info("Decomposition QA finished.")
     return merged_retrieval_result, validated_res
+
+
+def _answer_single_query(
+    *,
+    client,
+    vector_db,
+    question: str,
+    corpus_names: list[str] | None,
+    search_scope: dict[str, Any] | None,
+    question_history: list[dict[str, str] | str] | None,
+    selected_contexts: list[dict[str, Any] | object] | None,
+    active_model: str,
+    alias_hints: list[dict[str, str]],
+):
+    logger.info("Single-query retrieval started.")
+    retrieval_result = retrieve_context(
+        vector_db,
+        question,
+        corpus_names=corpus_names,
+        search_scope=search_scope,
+        model=active_model,
+    )
+    logger.info(f"Single-query retrieval completed with {len(retrieval_result.chunks)} ranked chunks.")
+    selected_context_text = format_selected_contexts(selected_contexts)
+    api_messages = build_answer_messages(
+        context_text=retrieval_result.context_text,
+        selected_context_text=selected_context_text,
+        question=question,
+        core_question=retrieval_result.query_plan.core_question,
+        retrieval_focus=retrieval_result.query_plan.retrieval_focus,
+        premise_claims=retrieval_result.query_plan.premise_claims,
+        question_history=question_history,
+        alias_hints=alias_hints,
+    )
+    allow_open_ended = "open_ended" in set(retrieval_result.query_plan.query_modes)
+    validated_res = get_validated_response(
+        client,
+        api_messages,
+        allow_open_ended=allow_open_ended,
+        model=active_model,
+    )
+    if retrieval_result.chunks and validated_res.is_blocked:
+        validated_res.is_related = True
+    logger.info("Single-query QA finished.")
+    return retrieval_result, validated_res
 
 
 def build_decomposition_plan(

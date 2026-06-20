@@ -1,0 +1,56 @@
+[project]
+name = "story-rag"
+version = "0.1.0"
+description = "Local Chinese fiction RAG desktop app with evidence-grounded answers."
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "PySide6==6.11.1",
+    "openai==2.31.0",
+    "langchain-chroma==1.1.0",
+    "langchain-core==1.4.0",
+    "pydantic==2.12.5",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["F821"]
+ignore = ["E501"]
+
+[tool.setuptools]
+py-modules = [
+    "app",
+    "app_services",
+    "build_db",
+    "build_desktop_exe",
+    "env_loader",
+    "run_desktop",
+]
+
+[tool.setuptools.packages.find]
+include = [
+    "core",
+    "desktop_app",
+    "knowledge_base",
+    "llm",
+    "preprocessing",
+    "qa",
+    "retrieval",
+]
+
+[tool.setuptools.package-data]
+desktop_app = ["assets/*.svg"]
