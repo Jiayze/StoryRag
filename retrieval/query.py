@@ -6,6 +6,8 @@ from collections import defaultdict
 from functools import lru_cache
 from pathlib import Path
 
+from core import get_logger
+
 from .config import (
     BGE_QUERY_PREFIX,
     CHUNKS_PATH,
@@ -29,6 +31,9 @@ from .aliases import alias_pairs_for_query, relevant_alias_entries
 from .models import QueryPlan
 from .query_enrichment import build_query_enricher
 from .utils import normalize_for_lexical
+
+
+logger = get_logger(__name__)
 
 
 QUERY_TOKEN_PATTERN = re.compile(r"[\u4e00-\u9fffA-Za-z0-9路]+")
@@ -200,7 +205,7 @@ def analyze_query(
     if "chapter_locator" in set(query_modes):
         keywords = _filter_locator_keywords(keywords, known_entities=[*alias_values, *persons, *locations, *events, *objects, *aliases])
     if enriched and enriched.used_llm:
-        print(f"[INFO] Query preprocessing used LLM. keywords={keywords}")
+        logger.info(f"Query preprocessing used LLM. keywords={keywords}")
     if not premise_claims:
         premise_claims = _fallback_premise_claims(query)
 

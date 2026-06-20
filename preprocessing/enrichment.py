@@ -12,17 +12,24 @@ from typing import Any
 from openai import OpenAI
 
 from env_loader import load_project_env
-from llm.client import DEEPSEEK_MODEL, normalize_deepseek_model
+from core import get_logger
+from llm.client import DEEPSEEK_MODEL, deepseek_request_timeout, normalize_deepseek_model
 from core.config import (
     DEEPSEEK_CHAPTER_CHAR_LIMIT,
     DEEPSEEK_CHUNK_CHAR_LIMIT,
     DEEPSEEK_PREPROCESS_ENABLED,
     DEEPSEEK_ROLE_INDEX_CHAR_LIMIT,
     PREPROCESS_CACHE_DIR,
+    PREPROCESS_MAX_RETRIES,
 )
 
 
 load_project_env()
+
+logger = get_logger(__name__)
+
+# 重试退避基数(秒):第 n 次失败后等待 _BACKOFF_BASE * 2**(n-1)
+_BACKOFF_BASE = 1.0
 
 
 # DeepSeek 凭证与预处理模型名保留在此(凭证/模型不集中,见 core/config.py 说明);
@@ -60,10 +67,12 @@ class DeepSeekEnricher:
         enabled: bool | None = None,
         model: str = DEEPSEEK_PREPROCESS_MODEL,
         cache_dir: Path = PREPROCESS_CACHE_DIR,
+        max_retries: int = PREPROCESS_MAX_RETRIES,
     ) -> None:
         self.enabled = DEEPSEEK_PREPROCESS_ENABLED if enabled is None else enabled
         self.model = normalize_deepseek_model(model)
         self.cache_dir = cache_dir
+        self.max_retries = max(1, int(max_retries))
         self._client: OpenAI | None = None
         self._request_count = 0
         self._cache_hit_count = 0
@@ -150,24 +159,9 @@ class DeepSeekEnricher:
             self._request_count += 1
             request_no = self._request_count
         scope = str(payload.get("scope", "unknown"))
-        print(
-            f"[INFO] DeepSeek enrichment request #{request_no} started for scope={scope}."
-        )
-        try:
-            response = self._client_instance().chat.completions.create(
-                model=self.model,
-                temperature=0.1,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": _system_prompt()},
-                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-                ],
-            )
-            raw_content = response.choices[0].message.content or "{}"
-            parsed = json.loads(raw_content)
-            enrichment = _normalize_enrichment(parsed)
-        except Exception:
-            enrichment = LLMEnrichment()
+        logger.info("DeepSeek enrichment request #%d started for scope=%s.", request_no, scope)
+        parsed = self._chat_json_with_retry(system_prompt=_system_prompt(), payload=payload, scope=scope)
+        enrichment = _normalize_enrichment(parsed) if parsed is not None else LLMEnrichment()
 
         if enrichment.used_llm:
             _write_cached_enrichment(cache_path, enrichment)
@@ -180,8 +174,46 @@ class DeepSeekEnricher:
                 self._client = OpenAI(
                     api_key=DEEPSEEK_API_KEY,
                     base_url=DEEPSEEK_API_BASE,
+                    timeout=deepseek_request_timeout(),
                 )
             return self._client
+
+    def _chat_json_with_retry(
+        self, *, system_prompt: str, payload: dict[str, Any], scope: str
+    ) -> dict[str, Any] | None:
+        """退避重试调用 DeepSeek 并返回解析后的 JSON 对象;耗尽重试后返回 None(由调用方降级)。"""
+        last_exc: Exception | None = None
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                response = self._client_instance().chat.completions.create(
+                    model=self.model,
+                    temperature=0.1,
+                    response_format={"type": "json_object"},
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+                    ],
+                )
+                raw_content = response.choices[0].message.content or "{}"
+                parsed = json.loads(raw_content)
+                if not isinstance(parsed, dict):
+                    raise ValueError(f"expected JSON object, got {type(parsed).__name__}")
+                return parsed
+            except Exception as exc:  # noqa: BLE001 — 网络/解析任意异常都重试
+                last_exc = exc
+                if attempt < self.max_retries:
+                    sleep_s = _BACKOFF_BASE * (2 ** (attempt - 1))
+                    logger.warning(
+                        "DeepSeek %s enrichment failed (attempt %d/%d): %s; retrying in %.1fs.",
+                        scope, attempt, self.max_retries, exc, sleep_s,
+                    )
+                    time.sleep(sleep_s)
+                else:
+                    logger.error(
+                        "DeepSeek %s enrichment failed after %d attempts, degrading to fallback: %s",
+                        scope, self.max_retries, exc,
+                    )
+        return None
 
     def _cache_path(self, payload: dict[str, Any]) -> Path:
         serialized = json.dumps(
@@ -207,22 +239,13 @@ class DeepSeekEnricher:
         with self._lock:
             self._request_count += 1
             request_no = self._request_count
-        print(f"[INFO] DeepSeek role index request #{request_no} started.")
-        try:
-            response = self._client_instance().chat.completions.create(
-                model=self.model,
-                temperature=0.1,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": _role_index_system_prompt()},
-                    {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
-                ],
-            )
-            raw_content = response.choices[0].message.content or "{}"
-            parsed = json.loads(raw_content)
-            enrichment = _normalize_role_index_enrichment(parsed)
-        except Exception:
-            enrichment = RoleIndexEnrichment()
+        logger.info("DeepSeek role index request #%d started.", request_no)
+        parsed = self._chat_json_with_retry(
+            system_prompt=_role_index_system_prompt(), payload=payload, scope="role_index"
+        )
+        enrichment = (
+            _normalize_role_index_enrichment(parsed) if parsed is not None else RoleIndexEnrichment()
+        )
 
         if enrichment.used_llm:
             _write_cached_role_index_enrichment(cache_path, enrichment)
@@ -238,10 +261,9 @@ class DeepSeekEnricher:
             requests = self._request_count
             cache_hits = self._cache_hit_count
         source = "cache" if from_cache else "api"
-        print(
-            "[INFO] DeepSeek enrichment heartbeat: "
-            f"requests={requests}, cache_hits={cache_hits}, "
-            f"latest_scope={scope}, latest_source={source}."
+        logger.info(
+            "DeepSeek enrichment heartbeat: requests=%d, cache_hits=%d, latest_scope=%s, latest_source=%s.",
+            requests, cache_hits, scope, source,
         )
 
 

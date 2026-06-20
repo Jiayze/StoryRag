@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+from core import get_logger
 from llm.client import DEEPSEEK_MODEL, create_deepseek_client, normalize_deepseek_model
+
+
+logger = get_logger(__name__)
 
 
 @dataclass(slots=True)
@@ -40,8 +44,8 @@ def decide_chunk_expansions(
     except Exception:
         return {}
 
-    print(
-        f"[INFO] DeepSeek context-expansion started with model={active_model} for {len(trimmed)} candidate chunks."
+    logger.info(
+        f"DeepSeek context-expansion started with model={active_model} for {len(trimmed)} candidate chunks."
     )
 
     messages = [
@@ -81,9 +85,9 @@ def decide_chunk_expansions(
             response_format={"type": "json_object"},
         )
         payload = json.loads(response.choices[0].message.content or "{}")
-        print("[SUCCESS] DeepSeek context-expansion completed.")
+        logger.info("DeepSeek context-expansion completed.")
     except Exception as exc:
-        print(f"[WARN] DeepSeek context-expansion skipped due to error: {exc}")
+        logger.warning(f"DeepSeek context-expansion skipped due to error: {exc}")
         return {}
 
     decisions: dict[str, ExpansionDecision] = {}

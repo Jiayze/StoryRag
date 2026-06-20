@@ -10,11 +10,15 @@ from typing import Any
 from openai import OpenAI
 
 from env_loader import load_project_env
+from core import get_logger
 from llm.client import DEEPSEEK_MODEL, create_deepseek_client, normalize_deepseek_model
 from core.config import QUERY_ENRICHMENT_CACHE_DIR, QUERY_ENRICHMENT_ENABLED
 
 
 load_project_env()
+
+
+logger = get_logger(__name__)
 
 
 # 查询增强模型名保留在此(默认回退到 DEEPSEEK_MODEL,属模型层);
@@ -75,7 +79,7 @@ class DeepSeekQueryEnricher:
         if cached is not None:
             return cached
 
-        print(f"[INFO] DeepSeek query preprocessing started for query: {query[:80]}")
+        logger.info(f"DeepSeek query preprocessing started for query: {query[:80]}")
         try:
             response = self._client_instance().chat.completions.create(
                 model=self.model,

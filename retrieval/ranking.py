@@ -177,6 +177,10 @@ def _rank_candidates(
 
     ranked: list[RankedChunk] = []
     relation_index = load_relation_index()
+    # query 侧特征只依赖问题本身,与候选 doc 无关:循环前算一次,避免每候选重复跑
+    # extract_keywords 的正则全扫与 char_grams(40~100 个候选 × 2 次调用)。
+    query_keywords = extract_keywords(query_plan.original_query, max_keywords=12)
+    query_grams = char_grams(normalize_for_lexical(query_plan.original_query), n=2)
     for doc, distance in docs_and_scores:
         if distance is None:
             dense_score = 0.0
@@ -184,10 +188,10 @@ def _rank_candidates(
             dense_score = 1.0 - ((distance - min_distance) / distance_span)
             dense_score = max(0.0, min(1.0, dense_score))
 
-        lexical_score = _lexical_score(query_plan.original_query, doc.page_content)
+        lexical_score = _lexical_score(query_keywords, query_grams, doc.page_content)
         metadata = restore_runtime_metadata(doc.metadata or {})
         metadata_score = _metadata_score(query_plan, metadata)
-        summary_score = _summary_score(query_plan, metadata)
+        summary_score = _summary_score(query_keywords, query_grams, metadata)
         relation_score = _relation_score(query_plan, metadata, relation_index, doc.page_content)
         position_score = _position_score(query_plan, metadata)
         volume_score = _volume_score(query_plan, metadata)
@@ -340,11 +344,11 @@ def _metadata_score(query_plan: QueryPlan, metadata: dict) -> float:
     return base
 
 
-def _summary_score(query_plan: QueryPlan, metadata: dict) -> float:
+def _summary_score(query_keywords: list[str], query_grams: set[str], metadata: dict) -> float:
     summary = str(metadata.get("chapter_summary", ""))
     if not summary:
         return 0.0
-    return _lexical_score(query_plan.original_query, summary)
+    return _lexical_score(query_keywords, query_grams, summary)
 
 
 def _position_score(query_plan: QueryPlan, metadata: dict) -> float:
@@ -592,17 +596,15 @@ def _select_diverse(ranked: list[RankedChunk], top_k: int) -> list[RankedChunk]:
     return selected
 
 
-def _lexical_score(query: str, text: str) -> float:
-    keywords = extract_keywords(query, max_keywords=12)
+def _lexical_score(query_keywords: list[str], query_grams: set[str], text: str) -> float:
     keyword_score = 0.0
-    if keywords:
-        keyword_score = sum(1 for keyword in keywords if keyword in text) / len(keywords)
+    if query_keywords:
+        keyword_score = sum(1 for keyword in query_keywords if keyword in text) / len(query_keywords)
 
-    q_grams = char_grams(normalize_for_lexical(query), n=2)
     t_grams = char_grams(normalize_for_lexical(text[:2500]), n=2)
     overlap_score = 0.0
-    if q_grams and t_grams:
-        overlap_score = len(q_grams & t_grams) / len(q_grams)
+    if query_grams and t_grams:
+        overlap_score = len(query_grams & t_grams) / len(query_grams)
 
     return max(0.0, min(1.0, 0.65 * keyword_score + 0.35 * overlap_score))
 
@@ -745,8 +747,8 @@ def _expand_with_adjacent_chunks(
         max_candidates=anchor_count,
         model=model,
     )
-    print(
-        f"[INFO] Context expansion decisions: anchors={anchor_count}, decisions={len(decisions)}."
+    logger.info(
+        f"Context expansion decisions: anchors={anchor_count}, decisions={len(decisions)}."
     )
     expansion_requests: dict[str, dict[str, str]] = {}
     neighbor_ids: list[str] = []
@@ -781,14 +783,14 @@ def _expand_with_adjacent_chunks(
             expansion_requests.setdefault(chunk_id, {})["reason"] = expansion_reason
 
     if not neighbor_ids:
-        print("[INFO] Context expansion selected 0 neighbor chunks.")
+        logger.info("Context expansion selected 0 neighbor chunks.")
         return ranked
 
     fetched = _fetch_chunks_by_ids(db, sorted(set(neighbor_ids)))
     if not fetched:
-        print(f"[INFO] Context expansion selected {len(neighbor_ids)} neighbors but fetched 0 chunks.")
+        logger.info(f"Context expansion selected {len(neighbor_ids)} neighbors but fetched 0 chunks.")
         return ranked
-    print(f"[INFO] Context expansion fetched {len(fetched)} neighbor chunks.")
+    logger.info(f"Context expansion fetched {len(fetched)} neighbor chunks.")
 
     fetched_by_id = {
         str(restore_runtime_metadata(doc.metadata or {}).get("chunk_id", "")).strip(): doc
@@ -818,7 +820,7 @@ def _expand_with_adjacent_chunks(
         item.document.metadata = metadata
         expanded_count += 1
 
-    print(f"[INFO] Context expansion merged adjacent text into {expanded_count} primary chunks.")
+    logger.info(f"Context expansion merged adjacent text into {expanded_count} primary chunks.")
     return ranked
 
 

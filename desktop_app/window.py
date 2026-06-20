@@ -789,11 +789,11 @@ class StoryRagWindow(QMainWindow):
         QMessageBox.information(self, "导入完成", f"已导入知识库：{names or '未知'}")
 
     def _handle_answer_success(self, payload: dict) -> None:
-        print("[INFO] Desktop answer UI update started.")
+        logger.info("Desktop answer UI update started.")
         retrieval_result = payload["retrieval_result"]
         validated = payload["validated_response"]
         self.current_followup_options = payload.get("followup_context_options", [])
-        print(f"[INFO] Desktop rendering {len(self.current_followup_options)} follow-up options.")
+        logger.info(f"Desktop rendering {len(self.current_followup_options)} follow-up options.")
         self._store_query_record(
             question=self.pending_question,
             retrieval_result=retrieval_result,
@@ -827,7 +827,7 @@ class StoryRagWindow(QMainWindow):
         self.thread_pool.start(worker)
 
     def _handle_worker_success(self, success_handler, result) -> None:
-        print("[INFO] Desktop worker success signal received.")
+        logger.info("Desktop worker success signal received.")
         self._set_busy_state(False, "就绪")
         try:
             success_handler(result)
@@ -841,7 +841,7 @@ class StoryRagWindow(QMainWindow):
             )
 
     def _handle_worker_error(self, title: str, traceback_text: str) -> None:
-        print("[ERROR] Desktop worker error signal received.")
+        logger.error("Desktop worker error signal received.")
         self._set_busy_state(False, "就绪")
         self._append_log(traceback_text)
         QMessageBox.critical(self, title, traceback_text.splitlines()[-1] if traceback_text else "未知错误")
@@ -849,7 +849,7 @@ class StoryRagWindow(QMainWindow):
     def _handle_worker_finished(self, worker: FunctionWorker) -> None:
         if worker in self.active_workers:
             self.active_workers.remove(worker)
-        print(f"[INFO] Desktop worker finished. active_workers={len(self.active_workers)}")
+        logger.info(f"Desktop worker finished. active_workers={len(self.active_workers)}")
 
     def _set_busy_state(self, busy: bool, text: str) -> None:
         self.busy = busy

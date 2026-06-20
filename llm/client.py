@@ -26,7 +26,7 @@ def _normalize_model_name(raw: str | None) -> str:
 DEEPSEEK_MODEL = _normalize_model_name(os.getenv("DEEPSEEK_MODEL"))
 
 
-def _request_timeout() -> float:
+def deepseek_request_timeout() -> float:
     raw = os.getenv("DEEPSEEK_REQUEST_TIMEOUT_SECONDS", "45").strip()
     try:
         value = float(raw)
@@ -46,7 +46,7 @@ def create_deepseek_client() -> OpenAI:
     return OpenAI(
         api_key=api_key,
         base_url=os.getenv("DEEPSEEK_API_BASE", "https://api.deepseek.com"),
-        timeout=_request_timeout(),
+        timeout=deepseek_request_timeout(),
     )
 
 

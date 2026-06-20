@@ -3,9 +3,13 @@ from __future__ import annotations
 import json
 import re
 
+from core import get_logger
 from .schemas import ServiceResponse
 from .validation import enforce_grounding
 from .client import DEEPSEEK_MODEL, normalize_deepseek_model
+
+
+logger = get_logger(__name__)
 
 
 def get_validated_response(
@@ -19,7 +23,7 @@ def get_validated_response(
     active_model = normalize_deepseek_model(model or DEEPSEEK_MODEL)
     for attempt in range(retries + 1):
         try:
-            print(f"[INFO] DeepSeek answer generation started with model={active_model} (attempt {attempt + 1}/{retries + 1}).")
+            logger.info(f"DeepSeek answer generation started with model={active_model} (attempt {attempt + 1}/{retries + 1}).")
             response = client.chat.completions.create(
                 model=active_model,
                 messages=api_messages,
@@ -38,14 +42,14 @@ def get_validated_response(
                 api_messages,
                 allow_open_ended=allow_open_ended,
             )
-            print("[SUCCESS] DeepSeek answer generation completed.")
+            logger.info("DeepSeek answer generation completed.")
 
             phone_pattern = re.compile(r"(1[3-9]\d)\d{4}(\d{4})")
             validated_data.answer = phone_pattern.sub(r"\1****\2", validated_data.answer)
             validated_data.premise_correction = phone_pattern.sub(r"\1****\2", validated_data.premise_correction)
             return validated_data
         except Exception as exc:
-            print(f"[DEBUG] Validation failed on attempt {attempt + 1}: {exc}")
+            logger.debug(f"Validation failed on attempt {attempt + 1}: {exc}")
             if attempt == retries:
                 return ServiceResponse(
                     is_related=False,

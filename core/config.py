@@ -70,6 +70,13 @@ QUERY_ENRICHMENT_CACHE_DIR = env_path(
 CHROMA_COLLECTION_NAME = env_str("RAG_CHROMA_COLLECTION", "langchain")
 EMBEDDING_MODEL = env_str("RAG_EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_BATCH_SIZE = env_int("RAG_EMBEDDING_BATCH_SIZE", 16)
+# embedding(SiliconFlow)单次请求超时,防止某批次永久挂起
+EMBEDDING_REQUEST_TIMEOUT = env_float("RAG_EMBEDDING_REQUEST_TIMEOUT_SECONDS", 60.0)
+# embedding 批次并发数。实测 SiliconFlow 接口支持并发(线程共享 client 安全),
+# 8 兼顾提速与 RPM/TPM 余量;长建库不建议 >16(会逼近 TPM 50 万/分 上限)。
+EMBEDDING_CONCURRENCY = env_int("RAG_EMBEDDING_CONCURRENCY", 8)
+# 单批 embedding 失败时的最大尝试次数(含首次),退避重试以兜住偶发 429/超时。
+EMBEDDING_MAX_RETRIES = env_int("RAG_EMBEDDING_MAX_RETRIES", 3)
 BGE_QUERY_PREFIX = env_str("RAG_QUERY_PREFIX", "为这个句子生成表示以用于检索相关文章：")
 
 
@@ -116,3 +123,6 @@ QUERY_ENRICHMENT_ENABLED = env_bool("RAG_QUERY_PREPROCESS_USE_DEEPSEEK", "true")
 # 建库时每章 chunk LLM 增强的并发线程数(这些调用是纯网络等待,用线程池加速)。
 # DeepSeek 并发上限很高(flash 2500 / pro 500),瓶颈在本地线程开销,32 兼顾速度与稳健。
 PREPROCESS_CONCURRENCY = env_int("RAG_PREPROCESS_CONCURRENCY", 32)
+# 单次预处理增强(DeepSeek)失败的最大尝试次数(含首次)。耗尽后降级为空增强
+# (单章缺增强仍可建库,不应中断整次任务),但会记 error 而非静默吞掉。
+PREPROCESS_MAX_RETRIES = env_int("RAG_PREPROCESS_MAX_RETRIES", 3)

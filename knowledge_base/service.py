@@ -11,6 +11,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from env_loader import load_project_env
+from core import get_logger
 from core.config import DOC_DIR
 from preprocessing import (
     ChunkArtifact,
@@ -35,6 +36,8 @@ from retrieval import (
 
 load_project_env()
 
+
+logger = get_logger(__name__)
 
 
 def ensure_doc_dir(directory: Path = DOC_DIR) -> Path:
@@ -192,7 +195,7 @@ def update_corpus_vector_db_incremental(
     ids_to_delete = _chunk_ids_for_docs(existing, replaced_doc_ids) if existing else []
     ids_to_delete.extend(_role_index_chunk_ids(existing) if existing else [])
     if ids_to_delete:
-        print(f"[INFO] Incremental update removes {len(ids_to_delete)} stale chunks before upsert.")
+        logger.info(f"Incremental update removes {len(ids_to_delete)} stale chunks before upsert.")
         vector_db.delete(ids=sorted(set(ids_to_delete)))
 
     merged_result = _merge_corpus_results(
@@ -464,7 +467,7 @@ def rebuild_vector_db(documents: list[Document], db_path: str = CHROMA_DB_DIR) -
     if backup_path.exists():
         shutil.rmtree(backup_path)
 
-    print("[INFO] Initializing embedding model and writing documents to temporary Chroma DB.")
+    logger.info("Initializing embedding model and writing documents to temporary Chroma DB.")
     embeddings_model = get_embedding_model()
     vector_db = Chroma.from_documents(
         documents=documents,
@@ -494,7 +497,7 @@ def rebuild_vector_db(documents: list[Document], db_path: str = CHROMA_DB_DIR) -
             temp_path.rename(persist_path)
         except PermissionError as exc:
             rename_error = exc
-            print(f"[INFO] Waiting for Chroma files to unlock before swap (attempt {attempt}/5).")
+            logger.info(f"Waiting for Chroma files to unlock before swap (attempt {attempt}/5).")
             time.sleep(1.0 * attempt)
         except Exception:
             if backup_path.exists() and not persist_path.exists():
@@ -546,7 +549,7 @@ def _delete_existing_corpus_documents(vector_db: Chroma, corpus_name: str) -> No
         return
     ids = existing.get("ids", []) if isinstance(existing, dict) else []
     if ids:
-        print(f"[INFO] Removing {len(ids)} existing chunks for corpus '{corpus_name}'.")
+        logger.info(f"Removing {len(ids)} existing chunks for corpus '{corpus_name}'.")
         vector_db.delete(ids=ids)
 
 
@@ -554,16 +557,16 @@ def _add_documents(vector_db: Chroma, documents: list[Document]) -> None:
     ids = [str(doc.id or doc.metadata.get("chunk_id")) for doc in documents]
     texts = [doc.page_content for doc in documents]
     metadatas = [doc.metadata for doc in documents]
-    print(f"[INFO] Writing {len(documents)} chunks into Chroma.")
+    logger.info(f"Writing {len(documents)} chunks into Chroma.")
     vector_db.add_texts(texts=texts, metadatas=metadatas, ids=ids)
 
 
 def _rebuild_vector_db_in_place(documents: list[Document], persist_path: Path) -> Chroma:
     if persist_path.exists():
-        print("[INFO] Windows mode: removing existing Chroma DB before in-place rebuild.")
+        logger.info("Windows mode: removing existing Chroma DB before in-place rebuild.")
         shutil.rmtree(persist_path)
 
-    print("[INFO] Windows mode: rebuilding Chroma DB in place to avoid rename/file-lock issues.")
+    logger.info("Windows mode: rebuilding Chroma DB in place to avoid rename/file-lock issues.")
     embeddings_model = get_embedding_model()
     vector_db = Chroma.from_documents(
         documents=documents,
@@ -581,7 +584,7 @@ def _rebuild_vector_db_in_place(documents: list[Document], persist_path: Path) -
             f"Chroma collection count mismatch after in-place rebuild: expected {len(documents)}, got {count}."
         )
 
-    print("[SUCCESS] Windows in-place Chroma rebuild completed.")
+    logger.info("Windows in-place Chroma rebuild completed.")
     return load_vector_db(str(persist_path))
 
 
@@ -589,20 +592,20 @@ def main() -> None:
     target_files = get_all_txt_files(DOC_DIR)
 
     if not target_files:
-        print(f"[WARNING] No .txt files found in {DOC_DIR}.")
-        print("[INFO] Put your source text files into the docs directory and run again.")
+        logger.warning(f"No .txt files found in {DOC_DIR}.")
+        logger.info("Put your source text files into the docs directory and run again.")
         return
 
-    print(f"[INFO] Found {len(target_files)} text files in {DOC_DIR}:")
+    logger.info(f"Found {len(target_files)} text files in {DOC_DIR}:")
     for file_path in target_files:
-        print(f" - {file_path}")
+        logger.info(f" - {file_path}")
 
-    print("\n[INFO] Start preprocessing documents and rebuilding vector DB...")
+    logger.info("\nStart preprocessing documents and rebuilding vector DB...")
     vector_db, documents = build_vector_db_from_files(target_files)
-    print(f"[SUCCESS] Generated {len(documents)} chunks.")
-    print(f"[SUCCESS] Processed artifacts directory: {PROCESSED_DIR}")
-    print(f"[SUCCESS] Chroma DB directory: {CHROMA_DB_DIR}")
-    print(f"[SUCCESS] Collection count: {vector_db._collection.count()}")
+    logger.info(f"Generated {len(documents)} chunks.")
+    logger.info(f"Processed artifacts directory: {PROCESSED_DIR}")
+    logger.info(f"Chroma DB directory: {CHROMA_DB_DIR}")
+    logger.info(f"Collection count: {vector_db._collection.count()}")
 
 
 def _sanitize_metadata_for_chroma(metadata: dict[str, object]) -> dict[str, Any]:

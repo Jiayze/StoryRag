@@ -19,6 +19,7 @@ from core.config import (
     MIN_RELATION_PERSON_FREQUENCY,
     PREPROCESS_CONCURRENCY,
 )
+from core import get_logger
 from .enrichment import build_enricher, merge_keywords, merge_metadata
 from .schema import (
     ChapterArtifact,
@@ -27,6 +28,9 @@ from .schema import (
     RelationArtifact,
     SourceDocumentArtifact,
 )
+
+
+logger = get_logger(__name__)
 
 
 PIPELINE_VERSION = "heavy-preprocess-v7-ds"
@@ -328,20 +332,20 @@ def preprocess_files(
     chapters: list[ChapterArtifact] = []
     chunks: list[ChunkArtifact] = []
     enricher = build_enricher(enabled=use_llm_enrichment, model=llm_model)
-    print(
-        "[INFO] Preprocessing started: "
+    logger.info(
+        "Preprocessing started: "
         f"documents={len(file_paths)}, llm_enrichment={'on' if enricher else 'off'}."
     )
 
     for doc_number, path in enumerate(file_paths, start=1):
-        print(f"[INFO] Loading document {doc_number}/{len(file_paths)}: {path.name}")
+        logger.info(f"Loading document {doc_number}/{len(file_paths)}: {path.name}")
         loaded = _load_text(path, base_dir=base_dir)
         lexicon = _build_entity_lexicon(loaded.normalized_text)
         doc_id = _stable_id("doc", loaded.relative_path, loaded.normalized_sha1)
 
         doc_chapters = _split_into_chapters(loaded)
-        print(
-            f"[INFO] Parsed document {path.name}: chars={len(loaded.normalized_text)}, chapters={len(doc_chapters)}."
+        logger.info(
+            f"Parsed document {path.name}: chars={len(loaded.normalized_text)}, chapters={len(doc_chapters)}."
         )
         doc_chunks = _chunk_document(
             loaded,
@@ -361,7 +365,7 @@ def preprocess_files(
         )
         if role_index_chunks:
             doc_chunks.extend(role_index_chunks)
-            print(f"[INFO] Added {len(role_index_chunks)} synthetic role index chunks for {path.name}.")
+            logger.info(f"Added {len(role_index_chunks)} synthetic role index chunks for {path.name}.")
 
         documents.append(
             SourceDocumentArtifact(
@@ -389,13 +393,13 @@ def preprocess_files(
         )
         chapters.extend(doc_chapters)
         chunks.extend(doc_chunks)
-        print(
-            f"[INFO] Document {path.name} complete: cumulative_chapters={len(chapters)}, cumulative_chunks={len(chunks)}."
+        logger.info(
+            f"Document {path.name} complete: cumulative_chapters={len(chapters)}, cumulative_chunks={len(chunks)}."
         )
 
     relations = _build_relations(chunks)
-    print(
-        f"[SUCCESS] Preprocessing completed: documents={len(documents)}, chapters={len(chapters)}, "
+    logger.info(
+        f"Preprocessing completed: documents={len(documents)}, chapters={len(chapters)}, "
         f"chunks={len(chunks)}, relations={len(relations)}."
     )
 
@@ -613,8 +617,8 @@ def _chunk_document(
 
     total_chapters = len(chapters)
     for chapter_number, chapter in enumerate(chapters, start=1):
-        print(
-            f"[INFO] Processing chapter {chapter_number}/{total_chapters}: {chapter.title} "
+        logger.info(
+            f"Processing chapter {chapter_number}/{total_chapters}: {chapter.title} "
             f"(chars={len(chapter.text)})."
         )
         chapter.chapter_id = _stable_id(
@@ -652,8 +656,8 @@ def _chunk_document(
                 chapter.metadata["llm_enriched"] = True
 
         local_chunks = _split_text(chapter.text)
-        print(
-            f"[INFO] Chapter {chapter.title}: split into {len(local_chunks)} candidate chunks."
+        logger.info(
+            f"Chapter {chapter.title}: split into {len(local_chunks)} candidate chunks."
         )
         chapter_chunk_ids: list[str] = []
         search_cursor = chapter.char_start
@@ -703,8 +707,8 @@ def _chunk_document(
                 )
 
             workers = max(1, min(PREPROCESS_CONCURRENCY, len(prepared_chunks)))
-            print(
-                f"[INFO] Chapter {chapter.title}: enriching {len(prepared_chunks)} chunks "
+            logger.info(
+                f"Chapter {chapter.title}: enriching {len(prepared_chunks)} chunks "
                 f"with concurrency={workers}."
             )
             with ThreadPoolExecutor(max_workers=workers) as executor:
@@ -744,8 +748,8 @@ def _chunk_document(
 
             if _is_placeholder_chunk(chapter.title, text, chunk_metadata):
                 chunk_metadata["is_placeholder_chunk"] = True
-                print(
-                    f"[INFO] Chapter {chapter.title}: skipped placeholder chunk "
+                logger.info(
+                    f"Chapter {chapter.title}: skipped placeholder chunk "
                     f"{prepared_number}/{total_prepared}."
                 )
                 continue
@@ -772,13 +776,13 @@ def _chunk_document(
             chapter_chunk_ids.append(chunk_id)
             chunk_index += 1
             if prepared_number == total_prepared or prepared_number % 10 == 0:
-                print(
-                    f"[INFO] Chapter {chapter.title}: processed chunk {prepared_number}/{total_prepared}."
+                logger.info(
+                    f"Chapter {chapter.title}: processed chunk {prepared_number}/{total_prepared}."
                 )
 
         _link_adjacent_chunks(chunks, chapter_chunk_ids)
-        print(
-            f"[INFO] Chapter {chapter.title} complete: produced {len(chapter_chunk_ids)} chunks."
+        logger.info(
+            f"Chapter {chapter.title} complete: produced {len(chapter_chunk_ids)} chunks."
         )
 
     return chunks

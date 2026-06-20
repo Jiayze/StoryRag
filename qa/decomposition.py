@@ -5,11 +5,15 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from core import get_logger
 from llm import DEEPSEEK_MODEL, build_answer_messages, get_validated_response, normalize_deepseek_model
 from retrieval import RetrievalResult, analyze_query, retrieve_context
 from retrieval.aliases import relevant_alias_entries, render_alias_hints
 
 from .context import format_selected_contexts
+
+
+logger = get_logger(__name__)
 
 
 DECOMPOSITION_MARKERS = (
@@ -63,12 +67,12 @@ def answer_with_decomposition(
     model: str | None = None,
 ):
     active_model = normalize_deepseek_model(model or DEEPSEEK_MODEL)
-    print(f"[INFO] Decomposition QA started for question: {question[:120]}")
+    logger.info(f"Decomposition QA started for question: {question[:120]}")
     scope_corpora = _scope_corpus_names(search_scope) or (corpus_names or [])
     alias_hints = relevant_alias_entries(question, scope_corpora)
     plan = build_decomposition_plan(client=client, question=question, model=active_model, alias_hints=alias_hints)
     if not plan.should_decompose or len(plan.sub_questions) <= 1:
-        print("[INFO] Decomposition planner declined multi-query; falling back to single retrieval.")
+        logger.info("Decomposition planner declined multi-query; falling back to single retrieval.")
         retrieval_result = retrieve_context(
             vector_db,
             question,
@@ -98,13 +102,13 @@ def answer_with_decomposition(
             validated_res.is_related = True
         return retrieval_result, validated_res
 
-    print(f"[INFO] Decomposition produced {len(plan.sub_questions)} sub-questions.")
+    logger.info(f"Decomposition produced {len(plan.sub_questions)} sub-questions.")
     evidence_sections: list[str] = []
     sub_results: list[tuple[DecomposedSubQuestion, RetrievalResult]] = []
     selected_context_text = format_selected_contexts(selected_contexts)
 
     for sub_question in plan.sub_questions:
-        print(f"[INFO] Retrieving sub-question: {sub_question.question[:120]}")
+        logger.info(f"Retrieving sub-question: {sub_question.question[:120]}")
         retrieval_result = retrieve_context(
             vector_db,
             sub_question.question,
@@ -127,7 +131,7 @@ def answer_with_decomposition(
         model=active_model,
     )
     synthesis_question = _build_synthesis_question(plan, sub_results)
-    print("[INFO] Decomposition synthesis answer generation started.")
+    logger.info("Decomposition synthesis answer generation started.")
     api_messages = build_answer_messages(
         context_text="\n\n".join(section for section in evidence_sections if section.strip()),
         selected_context_text=selected_context_text,
@@ -141,7 +145,7 @@ def answer_with_decomposition(
     validated_res = get_validated_response(client, api_messages, model=active_model)
     if merged_retrieval_result.chunks and validated_res.is_blocked:
         validated_res.is_related = True
-    print("[INFO] Decomposition QA finished.")
+    logger.info("Decomposition QA finished.")
     return merged_retrieval_result, validated_res
 
 
@@ -224,7 +228,7 @@ def _request_decomposition_payload(
         {"role": "user", "content": f"[User Alias Hints]\n{render_alias_hints(alias_hints)}\n\n[Question]\n{question}"},
     ]
     try:
-        print(f"[INFO] DeepSeek RAG query planning started with model={active_model}.")
+        logger.info(f"DeepSeek RAG query planning started with model={active_model}.")
         response = client.chat.completions.create(
             model=active_model,
             messages=messages,
@@ -234,10 +238,10 @@ def _request_decomposition_payload(
         content = response.choices[0].message.content or "{}"
         payload = json.loads(content)
         if isinstance(payload, dict):
-            print("[SUCCESS] DeepSeek RAG query planning completed.")
+            logger.info("DeepSeek RAG query planning completed.")
             return payload
     except Exception as exc:
-        print(f"[INFO] RAG query planning fallback due to error: {exc}")
+        logger.info(f"RAG query planning fallback due to error: {exc}")
     return {}
 
 
