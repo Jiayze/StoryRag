@@ -13,5 +13,6 @@ processed/
 chroma_db/
 dist/
 build/
+*.egg-info/
 *.spec
 desktop_app/__pycache__/

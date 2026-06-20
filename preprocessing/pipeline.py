@@ -899,8 +899,9 @@ def _build_single_role_index_chunk(
             relation_text = str(relation)
             if ":" in relation_text:
                 relation_type_counter[relation_text.split(":", 1)[-1]] += 1
+        evidence_snippet = re.sub(r"\s+", " ", chunk.text.strip())[:180]
         evidence_parts.append(
-            f"[{chunk.chapter_title}] {re.sub(r'\\s+', ' ', chunk.text.strip())[:180]}"
+            f"[{chunk.chapter_title}] {evidence_snippet}"
         )
 
     if not person_counter:

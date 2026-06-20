@@ -16,9 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QDialog,
     QLabel,
-    QLineEdit,
     QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -91,7 +89,7 @@ class StoryRagWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(18, 18, 18, 18)
+        root.setContentsMargins(16, 16, 16, 14)
         root.setSpacing(12)
 
         root.addWidget(self._build_header())
@@ -100,7 +98,9 @@ class StoryRagWindow(QMainWindow):
         splitter.addWidget(self._build_left_panel())
         splitter.addWidget(self._build_center_panel())
         splitter.addWidget(self._build_right_panel())
-        splitter.setSizes([320, 820, 460])
+        splitter.setHandleWidth(8)
+        splitter.setChildrenCollapsible(False)
+        splitter.setSizes([340, 850, 470])
         root.addWidget(splitter, 1)
 
         self.setCentralWidget(central)
@@ -115,27 +115,33 @@ class StoryRagWindow(QMainWindow):
         self.addAction(refresh_action)
 
     def _build_header(self) -> QWidget:
-        frame = self._card()
+        frame = QFrame()
+        frame.setProperty("headerBar", True)
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(18, 14, 18, 14)
-        layout.setSpacing(12)
+        layout.setContentsMargins(18, 13, 18, 13)
+        layout.setSpacing(14)
 
         title_box = QVBoxLayout()
+        title_box.setSpacing(2)
         title = QLabel("StoryRAG Desktop")
         title.setProperty("heroTitle", True)
-        subtitle = QLabel("本地小说知识库、多语料检索、证据约束问答")
+        subtitle = QLabel("本地小说知识库 · 多语料检索 · 证据约束问答")
         subtitle.setProperty("muted", True)
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
         layout.addLayout(title_box, 1)
 
         self.runtime_badge = QLabel("Workspace Ready")
-        self.runtime_badge.setStyleSheet(
-            "background:#eff7f3;border:1px solid #cfe8dc;border-radius:14px;padding:6px 10px;color:#1f9d68;font-weight:600;"
-        )
+        self.runtime_badge.setProperty("badge", True)
         layout.addWidget(self.runtime_badge, 0, Qt.AlignRight | Qt.AlignVCenter)
 
+        refresh_button = QPushButton("刷新")
+        refresh_button.setProperty("quiet", True)
+        refresh_button.clicked.connect(self.refresh_workspace)
+        layout.addWidget(refresh_button)
+
         self.settings_button = QPushButton("设置")
+        self.settings_button.setProperty("secondary", True)
         self.settings_button.clicked.connect(self.open_settings)
         layout.addWidget(self.settings_button)
         return frame
@@ -167,13 +173,17 @@ class StoryRagWindow(QMainWindow):
             ("处理块", self.processed_chunks_value, 2, 0),
             ("关系数", self.relations_value, 2, 1),
         ):
-            block = QVBoxLayout()
+            block_frame = QFrame()
+            block_frame.setProperty("statBlock", True)
+            block = QVBoxLayout(block_frame)
+            block.setContentsMargins(10, 9, 10, 9)
+            block.setSpacing(3)
             top = QLabel(label)
-            top.setProperty("muted", True)
-            value.setStyleSheet("font-size:20px;font-weight:700;")
+            top.setProperty("statLabel", True)
+            value.setProperty("statValue", True)
             block.addWidget(top)
             block.addWidget(value)
-            stats_layout.addLayout(block, row, col)
+            stats_layout.addWidget(block_frame, row, col)
         layout.addWidget(stats_card)
 
         corpus_card = self._card()
@@ -186,8 +196,9 @@ class StoryRagWindow(QMainWindow):
         corpus_tip.setWordWrap(True)
         corpus_layout.addWidget(corpus_tip)
         self.scope_warning_label = QLabel("")
-        self.scope_warning_label.setProperty("muted", True)
+        self.scope_warning_label.setProperty("warningText", True)
         self.scope_warning_label.setWordWrap(True)
+        self.scope_warning_label.setVisible(False)
         corpus_layout.addWidget(self.scope_warning_label)
         self.corpus_tree = QTreeWidget()
         self.corpus_tree.setHeaderHidden(True)
@@ -201,8 +212,12 @@ class StoryRagWindow(QMainWindow):
         corpus_layout.addWidget(self.corpus_tree)
         corpus_buttons = QHBoxLayout()
         select_all_button = QPushButton("全选")
+        select_all_button.setProperty("compact", True)
+        select_all_button.setProperty("quiet", True)
         select_all_button.clicked.connect(lambda: self._set_all_corpora_checked(True))
         clear_button = QPushButton("清空")
+        clear_button.setProperty("compact", True)
+        clear_button.setProperty("quiet", True)
         clear_button.clicked.connect(lambda: self._set_all_corpora_checked(False))
         corpus_buttons.addWidget(select_all_button)
         corpus_buttons.addWidget(clear_button)
@@ -229,12 +244,15 @@ class StoryRagWindow(QMainWindow):
         self.import_button.clicked.connect(self.import_files)
         ingest_layout.addWidget(self.import_button)
         self.incremental_button = QPushButton("增量更新现有知识库")
+        self.incremental_button.setProperty("secondary", True)
         self.incremental_button.clicked.connect(self.incremental_update)
         ingest_layout.addWidget(self.incremental_button)
         package_row = QHBoxLayout()
         self.export_package_button = QPushButton("导出建库包")
+        self.export_package_button.setProperty("quiet", True)
         self.export_package_button.clicked.connect(self.export_package)
         self.import_package_button = QPushButton("导入建库包")
+        self.import_package_button.setProperty("quiet", True)
         self.import_package_button.clicked.connect(self.import_package)
         package_row.addWidget(self.export_package_button)
         package_row.addWidget(self.import_package_button)
@@ -243,10 +261,12 @@ class StoryRagWindow(QMainWindow):
         self.rebuild_combo = DropdownSelect()
         rebuild_row.addWidget(self.rebuild_combo, 1)
         self.rebuild_button = QPushButton("强制重建")
+        self.rebuild_button.setProperty("danger", True)
         self.rebuild_button.clicked.connect(self.rebuild_corpus)
         rebuild_row.addWidget(self.rebuild_button)
         ingest_layout.addLayout(rebuild_row)
         self.alias_button = QPushButton("管理别名")
+        self.alias_button.setProperty("quiet", True)
         self.alias_button.clicked.connect(self.manage_aliases)
         ingest_layout.addWidget(self.alias_button)
         layout.addWidget(ingest_card)
@@ -259,8 +279,12 @@ class StoryRagWindow(QMainWindow):
         self.pinned_summary_label = QLabel("已固定证据 0 条")
         self.pinned_summary_label.setProperty("muted", True)
         session_layout.addWidget(self.pinned_summary_label)
-        session_layout.addWidget(QLabel("提问时会自动带上已固定证据，以及本轮右侧勾选证据。"))
+        session_tip = QLabel("提问时会自动带上已固定证据，以及本轮右侧勾选证据。")
+        session_tip.setProperty("caption", True)
+        session_tip.setWordWrap(True)
+        session_layout.addWidget(session_tip)
         self.clear_pinned_button = QPushButton("清空固定证据")
+        self.clear_pinned_button.setProperty("danger", True)
         self.clear_pinned_button.clicked.connect(self.clear_pinned_contexts)
         session_layout.addWidget(self.clear_pinned_button)
         layout.addWidget(session_card)
@@ -282,8 +306,10 @@ class StoryRagWindow(QMainWindow):
         layout.setSpacing(12)
 
         self.chat_scroll = QScrollArea()
+        self.chat_scroll.setObjectName("chatScroll")
         self.chat_scroll.setWidgetResizable(True)
         self.chat_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.chat_scroll.setFrameShape(QFrame.NoFrame)
         self.chat_view = QWidget()
         self.chat_layout = QVBoxLayout(self.chat_view)
         self.chat_layout.setContentsMargins(14, 14, 14, 14)
@@ -293,12 +319,13 @@ class StoryRagWindow(QMainWindow):
         layout.addWidget(self.chat_scroll, 1)
 
         composer = self._card()
+        composer.setProperty("composer", True)
         composer_layout = QVBoxLayout(composer)
         composer_layout.setContentsMargins(16, 16, 16, 16)
         composer_layout.setSpacing(10)
 
         hint = QLabel("提问时会结合本轮检索结果、固定证据，以及最近几轮问题历史。")
-        hint.setProperty("muted", True)
+        hint.setProperty("caption", True)
         composer_layout.addWidget(hint)
 
         self.question_input = QPlainTextEdit()
@@ -308,18 +335,21 @@ class StoryRagWindow(QMainWindow):
         composer_layout.addWidget(self.question_input)
 
         composer_buttons = QHBoxLayout()
+        composer_buttons.setSpacing(8)
         composer_buttons.addWidget(QLabel("提问模型"))
         self.ask_model_combo = DropdownSelect(popup_direction="up")
         self._populate_model_combo(self.ask_model_combo)
         composer_buttons.addWidget(self.ask_model_combo)
+        composer_buttons.addStretch(1)
+        clear_chat_button = QPushButton("清空对话")
+        clear_chat_button.setProperty("quiet", True)
+        clear_chat_button.clicked.connect(self.clear_chat)
+        composer_buttons.addWidget(clear_chat_button)
         self.send_button = QPushButton("发送问题")
         self.send_button.setProperty("primary", True)
+        self.send_button.setMinimumWidth(104)
         self.send_button.clicked.connect(self.ask_question)
-        clear_chat_button = QPushButton("清空对话")
-        clear_chat_button.clicked.connect(self.clear_chat)
         composer_buttons.addWidget(self.send_button)
-        composer_buttons.addWidget(clear_chat_button)
-        composer_buttons.addStretch(1)
         composer_layout.addLayout(composer_buttons)
 
         layout.addWidget(composer)
@@ -383,6 +413,7 @@ class StoryRagWindow(QMainWindow):
         layout.addWidget(self.pinned_scroll, 1)
         pinned_buttons = QHBoxLayout()
         remove_pinned_button = QPushButton("移除选中")
+        remove_pinned_button.setProperty("quiet", True)
         remove_pinned_button.clicked.connect(self.remove_selected_pinned_contexts)
         pinned_buttons.addWidget(remove_pinned_button)
         pinned_buttons.addWidget(self.clear_pinned_button_proxy())
@@ -401,6 +432,7 @@ class StoryRagWindow(QMainWindow):
         layout.addWidget(self.followup_scroll, 2)
         followup_buttons = QHBoxLayout()
         pin_button = QPushButton("固定勾选证据")
+        pin_button.setProperty("secondary", True)
         pin_button.clicked.connect(self.pin_checked_followup_contexts)
         followup_buttons.addWidget(pin_button)
         followup_buttons.addStretch(1)
@@ -1039,11 +1071,14 @@ class StoryRagWindow(QMainWindow):
         header.addWidget(checkbox, 0, Qt.AlignTop)
 
         title = QLabel(_evidence_source_label(option))
+        title.setProperty("evidenceTitle", True)
         title.setWordWrap(True)
         title.setTextInteractionFlags(Qt.TextSelectableByMouse)
         header.addWidget(title, 1)
 
         toggle_button = QPushButton("展开")
+        toggle_button.setProperty("compact", True)
+        toggle_button.setProperty("quiet", True)
         toggle_button.setFixedWidth(58)
         header.addWidget(toggle_button, 0, Qt.AlignTop)
         card_layout.addLayout(header)
@@ -1052,9 +1087,7 @@ class StoryRagWindow(QMainWindow):
         detail.setWordWrap(True)
         detail.setTextInteractionFlags(Qt.TextSelectableByMouse)
         detail.setVisible(False)
-        detail.setStyleSheet(
-            "background:#f8fafc;border:1px solid #e1e7ef;border-radius:6px;padding:8px;line-height:1.45;"
-        )
+        detail.setProperty("evidenceDetail", True)
         card_layout.addWidget(detail)
 
         def toggle_detail() -> None:
@@ -1074,47 +1107,6 @@ class StoryRagWindow(QMainWindow):
             registry=self.evidence_cards,
             checkbox_tooltip="勾选后可固定为追问上下文",
         )
-        return
-        card = QFrame()
-        card.setProperty("evidenceCard", True)
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(10, 8, 10, 8)
-        card_layout.setSpacing(8)
-
-        header = QHBoxLayout()
-        checkbox = QCheckBox()
-        checkbox.setToolTip("勾选后可固定为追问上下文")
-        checkbox.setMinimumSize(28, 28)
-        checkbox.setFocusPolicy(Qt.NoFocus)
-        header.addWidget(checkbox, 0, Qt.AlignTop)
-
-        title = QLabel(_evidence_source_label(option))
-        title.setWordWrap(True)
-        title.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        header.addWidget(title, 1)
-
-        toggle_button = QPushButton("展开")
-        toggle_button.setFixedWidth(58)
-        header.addWidget(toggle_button, 0, Qt.AlignTop)
-        card_layout.addLayout(header)
-
-        detail = QLabel(_evidence_detail_text(option, by_id=by_id))
-        detail.setWordWrap(True)
-        detail.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        detail.setVisible(False)
-        detail.setStyleSheet(
-            "background:#f8fafc;border:1px solid #e1e7ef;border-radius:6px;padding:8px;line-height:1.45;"
-        )
-        card_layout.addWidget(detail)
-
-        def toggle_detail() -> None:
-            visible = not detail.isVisible()
-            detail.setVisible(visible)
-            toggle_button.setText("收起" if visible else "展开")
-
-        toggle_button.clicked.connect(toggle_detail)
-        self.followup_layout.insertWidget(max(0, self.followup_layout.count() - 1), card)
-        self.evidence_cards.append({"checkbox": checkbox, "payload": option, "card": card})
 
     def _refresh_pinned_list(self) -> None:
         self.pinned_cards.clear()
@@ -1137,15 +1129,6 @@ class StoryRagWindow(QMainWindow):
                     registry=self.pinned_cards,
                     checkbox_tooltip="勾选后可从固定证据中移除",
                 )
-        self.pinned_summary_label.setText(f"已固定证据 {len(self.pinned_contexts)} 条")
-        return
-        self.pinned_list.clear()
-        for payload in self.pinned_contexts:
-            label = payload.get("label", "未命名证据")
-            preview = payload.get("preview", "")
-            item = QListWidgetItem(f"{label}\n{preview}")
-            item.setData(Qt.UserRole, payload.get("option_id"))
-            self.pinned_list.addItem(item)
         self.pinned_summary_label.setText(f"已固定证据 {len(self.pinned_contexts)} 条")
 
     def _render_answer_details(self, retrieval_result, validated, *, selected_contexts: list[dict] | None = None) -> None:
@@ -1199,11 +1182,13 @@ class StoryRagWindow(QMainWindow):
 
         bubble = QFrame()
         bubble.setProperty("chatBubbleUser" if role == "user" else "chatBubbleAssistant", True)
+        if role != "user":
+            bubble.setProperty("blocked", blocked)
         bubble_layout = QVBoxLayout(bubble)
         bubble_layout.setContentsMargins(12, 9, 12, 10)
         bubble_layout.setSpacing(6)
 
-        role_label = QLabel("You" if role == "user" else "Assistant")
+        role_label = QLabel("你" if role == "user" else "助手")
         role_label.setProperty("chatRole", True)
         bubble_layout.addWidget(role_label)
 
@@ -1211,7 +1196,7 @@ class StoryRagWindow(QMainWindow):
         content.setWordWrap(True)
         content.setTextInteractionFlags(Qt.TextSelectableByMouse)
         content.setMinimumWidth(180)
-        content.setMaximumWidth(520)
+        content.setMaximumWidth(660)
         bubble_layout.addWidget(content)
 
         if role == "user":
@@ -1223,17 +1208,6 @@ class StoryRagWindow(QMainWindow):
 
         self.chat_layout.insertWidget(max(0, self.chat_layout.count() - 1), row)
         self.chat_scroll.verticalScrollBar().setValue(self.chat_scroll.verticalScrollBar().maximum())
-        return
-        bubble_color = "#eaf4ff" if role == "user" else ("#fff7e8" if blocked else "#f4f7fb")
-        role_label = "用户" if role == "user" else "助手"
-        block = (
-            f"<div style='margin:10px 0;padding:12px 14px;border-radius:8px;"
-            f"background:{bubble_color};border:1px solid #dbe3ee;'>"
-            f"<div style='font-weight:600;margin-bottom:6px;'>{html.escape(role_label)}</div>"
-            f"<div style='white-space:pre-wrap;'>{html.escape(text)}</div>"
-            f"</div>"
-        )
-        self.chat_browser.append(block)
 
     def _append_log(self, text: str) -> None:
         self.log_view.appendPlainText(text)
@@ -1346,6 +1320,7 @@ class StoryRagWindow(QMainWindow):
             self.scope_warning_label.setText("已选择具体卷：未标卷旧内容不会参与搜索；如需纳入请重建知识库。")
         else:
             self.scope_warning_label.setText("")
+        self.scope_warning_label.setVisible(has_volume_filter)
         self._update_question_placeholder()
 
     def _update_question_placeholder(self) -> None:
@@ -1367,6 +1342,8 @@ class StoryRagWindow(QMainWindow):
 
     def clear_pinned_button_proxy(self) -> QPushButton:
         button = QPushButton("清空全部")
+        button.setProperty("compact", True)
+        button.setProperty("danger", True)
         button.clicked.connect(self.clear_pinned_contexts)
         return button
 
