@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from functools import lru_cache
 from pathlib import Path
 
@@ -132,7 +133,9 @@ def analyze_query(
     relation_intents = tuple(sorted(_relation_intent_types_from_text(query, persons)))
     query_modes = tuple(_detect_query_modes(query, persons, relation_intents))
     retrieval_focus = _augment_retrieval_focus(retrieval_focus, target_roles, target_volume)
-    locator_scene_hint = _extract_locator_scene_hint(query)
+    locator_scene_hint = _extract_locator_scene_hint(
+        query, known_entities=[*alias_values, *persons, *locations, *events, *objects]
+    )
 
     heuristic_payload = {
         "persons": persons,
@@ -187,8 +190,9 @@ def analyze_query(
 
     if "chapter_locator" in set(query_modes):
         if locator_scene_hint:
-            retrieval_focus = _merge_locator_focus(locator_scene_hint, persons, aliases)
-            core_question = _merge_locator_focus(locator_scene_hint, persons, aliases)
+            locator_known = [*alias_values, *persons, *locations, *events, *objects, *aliases]
+            retrieval_focus = _merge_locator_focus(locator_scene_hint, persons, aliases, locator_known)
+            core_question = _merge_locator_focus(locator_scene_hint, persons, aliases, locator_known)
         else:
             retrieval_focus = _clean_locator_text(retrieval_focus)
             core_question = _clean_locator_text(core_question)
@@ -622,24 +626,26 @@ def _augment_retrieval_focus(base_text: str, target_roles: list[str], target_vol
     return " ".join(merged)
 
 
-def _extract_locator_scene_hint(query: str) -> str:
+def _extract_locator_scene_hint(query: str, known_entities: Iterable[str] = ()) -> str:
     text = str(query or "").strip()
     if not text:
         return ""
     candidates = re.findall(r"[（(]([^（）()]{2,80})[）)]", text)
     for candidate in candidates:
         cleaned = _clean_locator_text(candidate)
-        if cleaned and not _is_locator_request_only(cleaned):
+        if cleaned and not _is_locator_request_only(cleaned, known_entities):
             return cleaned
     cleaned = _clean_locator_text(text)
     return cleaned if cleaned != text else ""
 
 
-def _merge_locator_focus(scene_hint: str, persons: list[str], aliases: list[str]) -> str:
+def _merge_locator_focus(
+    scene_hint: str, persons: list[str], aliases: list[str], known_entities: Iterable[str] = ()
+) -> str:
     terms = [scene_hint]
     for value in [*persons, *aliases]:
         cleaned = _clean_locator_text(str(value or ""))
-        if cleaned and cleaned not in scene_hint and not _is_locator_request_only(cleaned):
+        if cleaned and cleaned not in scene_hint and not _is_locator_request_only(cleaned, known_entities):
             terms.append(cleaned)
     return _dedupe_join_terms(terms)
 
@@ -690,11 +696,11 @@ def _filter_locator_keywords(keywords: list[str], *, known_entities: list[str]) 
         cleaned = _clean_locator_text(str(keyword or ""))
         if not cleaned or cleaned in seen:
             continue
-        if _is_locator_request_only(cleaned) and cleaned not in known:
+        if _is_locator_request_only(cleaned, known) and cleaned not in known:
             continue
-        if cleaned not in known and ("坐摩" in cleaned and "摩天轮" not in cleaned):
-            continue
-        if cleaned not in known and cleaned.endswith(("坐摩", "见到温", "时候他们", "动画最后")):
+        # 通用规则:定位模式下丢弃既非已知实体、又不含任何已知实体的短碎片
+        # (多为关键词跨词边界切分产生的噪声);不再针对具体作品写死词表。
+        if cleaned not in known and len(cleaned) <= 3 and not any(entity in cleaned for entity in known):
             continue
         if any(cleaned != other and cleaned in other and len(cleaned) <= 5 for other in keywords):
             continue
@@ -703,7 +709,7 @@ def _filter_locator_keywords(keywords: list[str], *, known_entities: list[str]) 
     return filtered
 
 
-def _is_locator_request_only(text: str) -> bool:
+def _is_locator_request_only(text: str, known_entities: Iterable[str] = ()) -> bool:
     compact = re.sub(r"\s+", "", str(text or ""))
     if not compact:
         return True
@@ -721,8 +727,11 @@ def _is_locator_request_only(text: str) -> bool:
         "查找",
         "寻找",
     )
+    # 实体白名单改用语料实际识别出的已知实体(人物/别名/地点/事件/物品),
+    # 不再针对具体作品写死专名;含已知实体的文本不算"纯查询话术"。
+    known = {str(value).strip() for value in known_entities if str(value).strip()}
     return any(term in compact for term in request_terms) and not any(
-        entity in compact for entity in ("老八", "八奈见", "温水", "摩天轮")
+        entity in compact for entity in known
     )
 
 

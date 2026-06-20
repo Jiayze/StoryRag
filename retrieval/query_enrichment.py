@@ -133,7 +133,7 @@ def _system_prompt() -> str:
         "If the query contains a domain-specific term like 泥巴种, keep it as one keyword.\n"
         "Be conservative and useful for retrieval.\n"
         "Separate the retrieval target from the answer request. The retrieval target should be the concrete scene/event/entity to find in the text; the answer request can ask for volume/chapter/location.\n"
-        "For chapter_locator questions like '动画最后的场景（老八和温水坐摩天轮）在小说中是第几卷第几章', set core_question/retrieval_focus to the concrete scene only, e.g. '老八/八奈见和温水坐摩天轮的场景', and put the locator request in query_modes, not keywords.\n"
+        "For chapter_locator questions like '某场景(角色甲和角色乙在某地点做某事)在小说中是第几卷第几章', set core_question/retrieval_focus to the concrete scene only, e.g. '角色甲和角色乙在某地点做某事的场景', and put the locator request in query_modes, not keywords.\n"
         "Do not include generic locator/request words in keywords, such as 动画最后, 小说中, 第几卷, 第几章, 在哪里, 哪一章, 查找, 场景所在. Keep keywords focused on entities and scene terms.\n"
         "Keywords must be complete semantic terms, not arbitrary character n-grams.\n"
         "Never output broken fragments such as 第八卷结, 尾天爱星, 样的一颗, or partial phrase splices.\n"
