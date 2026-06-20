@@ -1,0 +1,17 @@
+# StoryRAG 运行依赖(直接依赖,版本固定以保证可复现)
+# 安装:pip install -r requirements.txt
+# 说明:仅列出代码中直接 import 的第三方包;
+#      chromadb、httpx、langchain 等为上述包的传递依赖,会自动安装。
+
+# 桌面 GUI
+PySide6==6.11.1
+
+# LLM / Embedding 客户端(DeepSeek、SiliconFlow 均走 OpenAI 兼容接口)
+openai==2.31.0
+
+# 向量库与文档模型
+langchain-chroma==1.1.0
+langchain-core==1.4.0
+
+# 数据校验(答案结构化 schema)
+pydantic==2.12.5

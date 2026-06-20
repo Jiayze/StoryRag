@@ -1,0 +1,16 @@
+.env
+.venv/
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+*.log
+# 数据与运行产物(均不上传:含版权原文、缓存、向量库)
+docs/
+cache/
+processed/
+chroma_db/
+dist/
+build/
+*.spec
+desktop_app/__pycache__/
