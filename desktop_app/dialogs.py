@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
+    QCheckBox,
     QPushButton,
 )
 
@@ -125,6 +126,8 @@ class SettingsDialog(QDialog):
         self.setModal(True)
         self.resize(620, 430)
         self.inputs: dict[str, QLineEdit] = {}
+        self.show_debug_checkbox = QCheckBox("显示调试面板")
+        self.show_debug_checkbox.setChecked(str(settings.get("STORYRAG_SHOW_DEBUG_PANEL", "0")).strip() == "1")
 
         root = QVBoxLayout(self)
         root.setContentsMargins(20, 20, 20, 20)
@@ -153,6 +156,7 @@ class SettingsDialog(QDialog):
                 field.setEchoMode(QLineEdit.Password)
             self.inputs[key] = field
             form.addRow(label, field)
+        form.addRow("高级", self.show_debug_checkbox)
 
         root.addLayout(form, 1)
 
@@ -162,7 +166,9 @@ class SettingsDialog(QDialog):
         root.addWidget(buttons)
 
     def settings(self) -> dict[str, str]:
-        return {key: field.text().strip() for key, field in self.inputs.items()}
+        values = {key: field.text().strip() for key, field in self.inputs.items()}
+        values["STORYRAG_SHOW_DEBUG_PANEL"] = "1" if self.show_debug_checkbox.isChecked() else "0"
+        return values
 
 
 class AliasManagerDialog(QDialog):

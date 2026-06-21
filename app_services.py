@@ -288,6 +288,7 @@ def load_runtime_settings() -> dict[str, str]:
         "SILICONFLOW_API_KEY": os.getenv("SILICONFLOW_API_KEY", ""),
         "SILICONFLOW_API_BASE": os.getenv("SILICONFLOW_API_BASE", "https://api.siliconflow.cn/v1"),
         "RAG_EMBEDDING_MODEL": os.getenv("RAG_EMBEDDING_MODEL", "BAAI/bge-m3"),
+        "STORYRAG_SHOW_DEBUG_PANEL": os.getenv("STORYRAG_SHOW_DEBUG_PANEL", "0"),
     }
 
 
@@ -299,6 +300,7 @@ def save_runtime_settings(settings: dict[str, str]) -> None:
         "SILICONFLOW_API_KEY",
         "SILICONFLOW_API_BASE",
         "RAG_EMBEDDING_MODEL",
+        "STORYRAG_SHOW_DEBUG_PANEL",
     }
     env_path = resolve_project_path(None, ".env")
     existing_lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []

@@ -97,9 +97,7 @@ def mark_low_confidence(validated_data: ServiceResponse, reason: str) -> Service
     validated_data.raw_reason = validated_data.reason
     validated_data.answer = (
         "【低可信度 / 需核对证据】\n"
-        f"{reason}\n\n"
-        "系统没有把下面内容当作可靠结论，请优先核对右侧检索证据。\n\n"
-        f"模型原始回答：{validated_data.raw_answer or '无'}"
+        f"{validated_data.raw_answer or '无'}"
     )
     validated_data.reason = reason
     return validated_data

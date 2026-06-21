@@ -6,16 +6,17 @@ from functools import partial
 from typing import Any
 
 from PySide6.QtCore import QEvent, Qt, QThreadPool
-from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QFileDialog,
     QFrame,
+    QFormLayout,
     QGridLayout,
     QHBoxLayout,
     QDialog,
     QLabel,
+    QLineEdit,
     QListWidget,
     QMainWindow,
     QMessageBox,
@@ -60,6 +61,8 @@ from .workers import FunctionWorker
 
 logger = get_logger(__name__)
 
+DEBUG_PANEL_SETTING = "STORYRAG_SHOW_DEBUG_PANEL"
+
 
 class StoryRagWindow(QMainWindow):
     def __init__(self) -> None:
@@ -82,6 +85,12 @@ class StoryRagWindow(QMainWindow):
         self.scope_catalog: dict[str, dict[str, Any]] = {}
         self.has_corpora = False
         self.busy = False
+        self.right_tabs: QTabWidget | None = None
+        self.debug_tab: QWidget | None = None
+        self.debug_tab_visible = False
+        self.settings_inputs: dict[str, QLineEdit] = {}
+        self.show_debug_checkbox: QCheckBox | None = None
+        self.save_settings_button: QPushButton | None = None
 
         self._build_ui()
         self.refresh_workspace()
@@ -91,8 +100,6 @@ class StoryRagWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(16, 16, 16, 14)
         root.setSpacing(12)
-
-        root.addWidget(self._build_header())
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self._build_left_panel())
@@ -109,42 +116,6 @@ class StoryRagWindow(QMainWindow):
         self.status_label = QLabel("就绪")
         status_bar.addWidget(self.status_label)
         self.setStatusBar(status_bar)
-
-        refresh_action = QAction("刷新", self)
-        refresh_action.triggered.connect(self.refresh_workspace)
-        self.addAction(refresh_action)
-
-    def _build_header(self) -> QWidget:
-        frame = QFrame()
-        frame.setProperty("headerBar", True)
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(18, 13, 18, 13)
-        layout.setSpacing(14)
-
-        title_box = QVBoxLayout()
-        title_box.setSpacing(2)
-        title = QLabel("StoryRAG Desktop")
-        title.setProperty("heroTitle", True)
-        subtitle = QLabel("本地小说知识库 · 多语料检索 · 证据约束问答")
-        subtitle.setProperty("muted", True)
-        title_box.addWidget(title)
-        title_box.addWidget(subtitle)
-        layout.addLayout(title_box, 1)
-
-        self.runtime_badge = QLabel("Workspace Ready")
-        self.runtime_badge.setProperty("badge", True)
-        layout.addWidget(self.runtime_badge, 0, Qt.AlignRight | Qt.AlignVCenter)
-
-        refresh_button = QPushButton("刷新")
-        refresh_button.setProperty("quiet", True)
-        refresh_button.clicked.connect(self.refresh_workspace)
-        layout.addWidget(refresh_button)
-
-        self.settings_button = QPushButton("设置")
-        self.settings_button.setProperty("secondary", True)
-        self.settings_button.clicked.connect(self.open_settings)
-        layout.addWidget(self.settings_button)
-        return frame
 
     def _build_left_panel(self) -> QWidget:
         scroll = QScrollArea()
@@ -294,10 +265,7 @@ class StoryRagWindow(QMainWindow):
         return scroll
 
     def _build_center_panel(self) -> QWidget:
-        tabs = QTabWidget()
-        tabs.addTab(self._build_chat_tab(), "问答工作台")
-        tabs.addTab(self._build_overview_tab(), "知识库总览")
-        return tabs
+        return self._build_chat_tab()
 
     def _build_chat_tab(self) -> QWidget:
         wrapper = QWidget()
@@ -355,30 +323,14 @@ class StoryRagWindow(QMainWindow):
         layout.addWidget(composer)
         return wrapper
 
-    def _build_overview_tab(self) -> QWidget:
-        wrapper = QWidget()
-        layout = QVBoxLayout(wrapper)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(12)
-
-        self.corpora_table = QTableWidget(0, 4)
-        self.corpora_table.setHorizontalHeaderLabels(["知识库", "文档数", "章节数", "块数"])
-        self.corpora_table.verticalHeader().setVisible(False)
-        self.corpora_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.corpora_table.setSelectionBehavior(QTableWidget.SelectRows)
-        layout.addWidget(self.corpora_table, 1)
-
-        self.manifest_view = QTextBrowser()
-        layout.addWidget(self.manifest_view, 1)
-        return wrapper
-
     def _build_right_panel(self) -> QWidget:
-        tabs = QTabWidget()
-        tabs.addTab(self._build_evidence_tab(), "证据")
-        tabs.addTab(self._build_debug_tab(), "调试")
-        tabs.addTab(self._build_details_tab(), "详情")
-        tabs.addTab(self._build_log_tab(), "日志")
-        return tabs
+        self.right_tabs = QTabWidget()
+        self.right_tabs.addTab(self._build_evidence_tab(), "证据")
+        self.debug_tab = self._build_debug_tab()
+        self.right_tabs.addTab(self._build_details_tab(), "详情")
+        self.right_tabs.addTab(self._build_settings_tab(), "设置")
+        self._sync_debug_tab_visibility()
+        return self.right_tabs
 
     def eventFilter(self, watched, event) -> bool:
         if watched is getattr(self, "question_input", None) and event.type() == QEvent.MouseButtonPress:
@@ -459,13 +411,43 @@ class StoryRagWindow(QMainWindow):
         layout.addWidget(self.details_browser)
         return wrapper
 
-    def _build_log_tab(self) -> QWidget:
+    def _build_settings_tab(self) -> QWidget:
         wrapper = QWidget()
         layout = QVBoxLayout(wrapper)
         layout.setContentsMargins(12, 12, 12, 12)
-        self.log_view = QPlainTextEdit()
-        self.log_view.setReadOnly(True)
-        layout.addWidget(self.log_view)
+        layout.setSpacing(12)
+
+        layout.addWidget(self._section_label("运行设置"))
+
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        form.setFormAlignment(Qt.AlignTop)
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        settings = load_runtime_settings()
+        self.settings_inputs.clear()
+        for key, label in SettingsDialog.FIELD_LABELS.items():
+            field = QLineEdit()
+            field.setText(settings.get(key, ""))
+            field.setPlaceholderText(SettingsDialog.FIELD_HINTS.get(key, ""))
+            if key.endswith("API_KEY"):
+                field.setEchoMode(QLineEdit.Password)
+            self.settings_inputs[key] = field
+            form.addRow(label, field)
+
+        self.show_debug_checkbox = QCheckBox("显示调试面板")
+        self.show_debug_checkbox.setChecked(str(settings.get(DEBUG_PANEL_SETTING, "0")).strip() == "1")
+        form.addRow("高级", self.show_debug_checkbox)
+        layout.addLayout(form, 1)
+
+        button_row = QHBoxLayout()
+        button_row.addStretch(1)
+        self.save_settings_button = QPushButton("保存设置")
+        self.save_settings_button.setProperty("primary", True)
+        self.save_settings_button.clicked.connect(self.save_settings)
+        button_row.addWidget(self.save_settings_button)
+        layout.addLayout(button_row)
         return wrapper
 
     def refresh_workspace(self) -> None:
@@ -480,20 +462,19 @@ class StoryRagWindow(QMainWindow):
         self.vector_chunks_value.setText(str(snapshot.get("vector_chunk_count", 0)))
         self.processed_chunks_value.setText(str(manifest.get("chunk_count", 0)))
         self.relations_value.setText(str(manifest.get("relation_count", 0)))
-        self.runtime_badge.setText(f"{len(corpora)} 个知识库")
 
         self._populate_corpus_selector(corpora)
         self._populate_rebuild_combo(corpora)
-        self._populate_overview(corpora, manifest)
         self._update_question_placeholder()
         self._append_log("已刷新工作区状态。")
 
-    def open_settings(self) -> None:
-        dialog = SettingsDialog(load_runtime_settings(), self)
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
+    def save_settings(self) -> None:
+        settings = {key: field.text().strip() for key, field in self.settings_inputs.items()}
+        settings[DEBUG_PANEL_SETTING] = (
+            "1" if self.show_debug_checkbox is not None and self.show_debug_checkbox.isChecked() else "0"
+        )
         try:
-            save_runtime_settings(dialog.settings())
+            save_runtime_settings(settings)
         except Exception:
             traceback_text = traceback.format_exc()
             self._append_log(traceback_text)
@@ -503,6 +484,7 @@ class StoryRagWindow(QMainWindow):
                 traceback_text.splitlines()[-1] if traceback_text else "未知错误",
             )
             return
+        self._sync_debug_tab_visibility()
         self._append_log("运行设置已保存并应用。")
         QMessageBox.information(self, "设置已保存", "API 与模型设置已写入 .env，并应用到当前运行。")
 
@@ -893,7 +875,20 @@ class StoryRagWindow(QMainWindow):
         self.import_package_button.setEnabled(not busy)
         self.rebuild_button.setEnabled(not busy)
         self.alias_button.setEnabled(not busy)
-        self.settings_button.setEnabled(not busy)
+        if self.save_settings_button is not None:
+            self.save_settings_button.setEnabled(not busy)
+
+    def _sync_debug_tab_visibility(self) -> None:
+        if self.right_tabs is None or self.debug_tab is None:
+            return
+        enabled = str(load_runtime_settings().get(DEBUG_PANEL_SETTING, "0")).strip() == "1"
+        current_index = self.right_tabs.indexOf(self.debug_tab)
+        if enabled and current_index == -1:
+            self.right_tabs.insertTab(min(1, self.right_tabs.count()), self.debug_tab, "调试")
+            self.debug_tab_visible = True
+        elif not enabled and current_index != -1:
+            self.right_tabs.removeTab(current_index)
+            self.debug_tab_visible = False
 
     def _populate_corpus_selector(self, corpora: list[dict]) -> None:
         existing_scope = self._selected_search_scope() if hasattr(self, "corpus_tree") else {}
@@ -942,30 +937,6 @@ class StoryRagWindow(QMainWindow):
         self.rebuild_combo.addItems(names)
         if current and current in names:
             self.rebuild_combo.setCurrentText(current)
-
-    def _populate_overview(self, corpora: list[dict], manifest: dict) -> None:
-        rows = list(corpora)
-        self.corpora_table.setRowCount(len(rows))
-        for row, corpus in enumerate(rows):
-            values = [
-                str(corpus.get("corpus_name", "")),
-                str(corpus.get("document_count", 0)),
-                str(corpus.get("chapter_count", 0)),
-                str(corpus.get("chunk_count", 0)),
-            ]
-            for col, value in enumerate(values):
-                self.corpora_table.setItem(row, col, QTableWidgetItem(value))
-        self.corpora_table.resizeColumnsToContents()
-
-        summary_lines = [
-            f"Pipeline Version: {manifest.get('pipeline_version', 'unknown')}",
-            f"Generated At: {manifest.get('generated_at', 'unknown')}",
-            f"Document Count: {manifest.get('document_count', 0)}",
-            f"Chapter Count: {manifest.get('chapter_count', 0)}",
-            f"Chunk Count: {manifest.get('chunk_count', 0)}",
-            f"Relation Count: {manifest.get('relation_count', 0)}",
-        ]
-        self.manifest_view.setPlainText("\n".join(summary_lines))
 
     def _store_query_record(
         self,
@@ -1136,7 +1107,6 @@ class StoryRagWindow(QMainWindow):
             self._selected_context_payloads() if selected_contexts is None else selected_contexts
         )
         selected_context_text = _truncate_ui_text(selected_context_text, 12000)
-        retrieved_context_text = _truncate_ui_text(retrieval_result.context_text or "No usable chunks", 24000)
         parts = [
             f"<b>Knowledge Related:</b> {html.escape(str(validated.is_related))}",
             f"<b>Blocked:</b> {html.escape(str(validated.is_blocked))}",
@@ -1152,7 +1122,6 @@ class StoryRagWindow(QMainWindow):
             f"<b>Query Modes:</b> {html.escape(', '.join(retrieval_result.query_plan.query_modes))}",
             f"<b>Keywords:</b> {html.escape(', '.join(retrieval_result.keywords))}",
             f"<b>Pinned / Selected Follow-up Evidence:</b><br><pre>{html.escape(selected_context_text or '无')}</pre>",
-            f"<b>Retrieved Context:</b><br><pre>{html.escape(retrieved_context_text)}</pre>",
         ]
         self.details_browser.setHtml("<br>".join(parts))
 
@@ -1196,7 +1165,7 @@ class StoryRagWindow(QMainWindow):
         content.setWordWrap(True)
         content.setTextInteractionFlags(Qt.TextSelectableByMouse)
         content.setMinimumWidth(180)
-        content.setMaximumWidth(660)
+        content.setMaximumWidth(self._chat_bubble_max_width())
         bubble_layout.addWidget(content)
 
         if role == "user":
@@ -1209,8 +1178,13 @@ class StoryRagWindow(QMainWindow):
         self.chat_layout.insertWidget(max(0, self.chat_layout.count() - 1), row)
         self.chat_scroll.verticalScrollBar().setValue(self.chat_scroll.verticalScrollBar().maximum())
 
+    def _chat_bubble_max_width(self) -> int:
+        if not hasattr(self, "chat_scroll"):
+            return 660
+        return max(360, int(self.chat_scroll.viewport().width() * 0.66))
+
     def _append_log(self, text: str) -> None:
-        self.log_view.appendPlainText(text)
+        logger.info(str(text))
 
     def _selected_corpus_names(self) -> list[str]:
         return list(self._selected_search_scope().get("corpora", []))

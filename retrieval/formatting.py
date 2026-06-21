@@ -70,7 +70,6 @@ def format_debug_table(chunks: list[RankedChunk]) -> list[dict[str, object]]:
                 "expansion_reason": metadata.get("expansion_reason", ""),
                 "chapter": metadata.get("chapter", "Unknown Chapter"),
                 "chunk": metadata.get("chunk_index", "?"),
-                "preview": item.document.page_content.strip().replace("\n", " ")[:90],
             }
         )
     return rows
