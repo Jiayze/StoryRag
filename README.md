@@ -76,7 +76,7 @@ RAG_PROCESSED_DIR=processed
 RAG_CHROMA_DB_DIR=chroma_db
 ```
 
-更多旋钮见 `.env.example`。应用内的「设置」对话框也能把这些值写回本地 `.env`。
+更多选项见 `.env.example`。应用内的「设置」对话框也能把这些值写回本地 `.env`。
 
 ## 使用
 
